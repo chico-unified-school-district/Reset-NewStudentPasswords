@@ -52,7 +52,7 @@ param (
 Clear-Host; $error.clear()
 # Imported Sessions
 # AD Domain Controller Session
-$adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword'
+$adCmdLets = 'Get-ADUser', 'Set-ADAccountPassword'
 $adSession = New-PSSession -ComputerName $DomainController -Credential $ADCredential
 Import-PSSession -Session $adSession -Module ActiveDirectory -CommandName $adCmdLets -AllowClobber > $null
 
