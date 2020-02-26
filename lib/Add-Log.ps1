@@ -5,12 +5,13 @@ function Add-Log {
 		[STRING]$Type,
   [Parameter(Position = 1, Mandatory = $True)]
   [Alias("Msg")]
-		[STRING]$Message,
+  [STRING]$Message,
   [Parameter(Position = 2, Mandatory = $false)]
-  [SWITCH]$Test )
+  [switch]$WhatIf
+ )
  $date = Get-Date -Format s
  $type = "[$($type.toUpper())]"
- $testString = if ($Test) { "[WhatIf] " }
+ $testString = if ($WhatIf) { "[WhatIf] " }
  $logMsg = "$testString$date,$type,$message"
  Write-Output $logMsg
 }
