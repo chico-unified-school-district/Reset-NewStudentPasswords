@@ -46,13 +46,20 @@ param (
     [System.Management.Automation.PSCredential]$SQLCredential,
     [Parameter(Mandatory = $True)]
     [string]$TempPWQuery,
+    [Parameter(Mandatory = $True)]
+    [string]$SecondaryGroup,
     [switch]$WhatIf
 )
 
 Clear-Host; $error.clear()
 # Imported Sessions
 # AD Domain Controller Session
-$adCmdLets = 'Get-ADUser', 'Set-ADAccountPassword'
+$adCmdLets = @(
+ 'Get-ADUser'
+ 'Set-ADAccountPassword'
+ 'Remove-ADPrincipalGroupMembership'
+ 'Add-ADPrincipalGroupMembership'
+)
 $adSession = New-PSSession -ComputerName $DomainController -Credential $ADCredential
 Import-PSSession -Session $adSession -Module ActiveDirectory -CommandName $adCmdLets -AllowClobber > $null
 
@@ -77,6 +84,7 @@ $params = @{
     'homepage',
     'PasswordLastSet',
     'LastLogonDate',
+    'gecos',
     'Created'
     SearchBase = $ADSearchBase
 }
@@ -100,6 +108,7 @@ do {
         # Process AD Results
         $samid = $user.samAccountName
         $homepage = $user.homepage
+        $gmail = $user.homepage
         if (!$homepage) { Add-Log error "$samid,Homepage not set,Skipping" $WhatIf; continue }
         [string]$id = $user.employeeID
         if (!$id) { Add-Log error "$samid,ID not set" $WhatIf; continue }
@@ -132,8 +141,31 @@ if ($gamStatusCheck.suspended -eq $true) {
                 }
                 $tempPw = [string](Get-date $tempPwQueryResult.BD -Format yyMMdd)
                 $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
-                Add-Log pwreset "$samid" $WhatIf
+
+                if ($user.gecos -ge 6){
+                 $targetGroup = $SecondaryPasswordGroup
+                 $removeParams = @{
+                  Identity = $user.ObjectGUID
+                  MemberOf = $targetGroup
+                  ErrorAction = 'SilentlyContinue'
+                  Confirm = $false
+                  WhatIf = $WhatIf
+                 }
+                 Remove-ADPrincipalGroupMembership @removeParams
+                 Write-Verbose ('{0} (GR:{1}) removed from {2}' -f $sam, $user.gecos, $targetGroup)
+                 Start-Sleep 15 # Give AD Time to replicate
+                }
+
                 Set-ADAccountPassword -Identity $samid -NewPassword $securePw -Reset -Confirm:$False -Whatif:$WhatIf
+
+                if ($user.gecos -ge 6){
+                 Add-ADPrincipalGroupMembership -Identity $user.ObjectGUID -MemberOf $targetGroup -Confirm:$False -WhatIf:$WhatIf
+                 Write-Verbose ('{0} (GR:{1}) added to {2}' -f $sam, $user.gecos, $targetGroup)
+                 Start-Sleep 5
+                 Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset=0} -Confirm:$false -WhatIf:$WhatIf
+                }
+
+                Add-Log pwreset "$samid" $WhatIf
             } # End PW Reset Process
             # Reactivate GSuite account
             if ( [string]$guser -match 'Account Suspended: True' ) {
