@@ -7,11 +7,11 @@ and an AD Account with propers access to the Domain,
 the script can update AD/GSuite passwords and GSuite attributes for 
 qualifying AD user objects.
 .EXAMPLE
- Reset-GSuitePasswords.ps1 -DC servername -ADCred $adCredObject
+ Reset-GSuitePasswords.ps1 -DC servername -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup
 .EXAMPLE
- Reset-GSuitePasswords.ps1 -DC servername -ADCred $adCredObject -WhatIf -Verbose -Debug
+ Reset-GSuitePasswords.ps1 -DC servername -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-WhatIf -Verbose -Debug
 .EXAMPLE
- Reset-GSuitePasswords.ps1 -OneLoop -DC servername -ADCred $adCredObject
+ Reset-GSuitePasswords.ps1 -OneLoop -DC servername -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-ADCred $adCredObject
 .INPUTS
  Gam.exe oauth2.txt
  ACtive Driectory Domain Controller name.
