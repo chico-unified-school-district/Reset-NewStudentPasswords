@@ -91,7 +91,7 @@ do {
     Write-Verbose 'Getting qualifying AD Objects...'
     $userObjs = Get-ADUser @params | Where-Object {
         ($_.created -ge (Get-Date).AddDays(-200)) -and
-        ($_.created.DateTime -eq $_.passwordlastset.DateTime) -and 
+        ($_.created.DateTime -eq $_.passwordlastset.DateTime) -and
         ($null -eq $_.LastLogonDate)
     }
 
@@ -103,20 +103,30 @@ do {
         if (!$homepage) { Add-Log error "$samid,Homepage not set,Skipping" $WhatIf; continue }
         [string]$id = $user.employeeID
         if (!$id) { Add-Log error "$samid,ID not set" $WhatIf; continue }
-  
+
         Write-Debug "Process $samid`?"
-  
+# Check GSuite account and unsuspend if needed
+($gamStatusCheck = .$gam print users query "email:$gmail" fields suspended | convertfrom-csv)*>$null
+if ($gamStatusCheck.suspended -eq $true) {
+ Add-Log gsuite ('{0},Activating Account' -f $gmail)
+ if ($WhatIf){ 
+  "[WHATIF] $gam update user $gmail suspended off"
+ }
+ else {
+  (.$gam update user $gmail suspended off) *>$null
+ }
+}
         ($guser = . $gam info user $samid) *>$null
         if ( [string]$guser -match $samid ) {
             # Begin check Gsuite and reset password
             Write-Verbose $user.samAccountName
-            # Begin PW Reset Process. 
+            # Begin PW Reset Process.
             # looking for 'passwordsLastSet date' = 'account create date'.
             if (($user.created.DateTime -eq $user.passwordlastset.DateTime)) {
                 # Query SIS DB for data
                 $filledTempPwQuery = 'SELECT DISTINCT BD FROM STU WHERE ID = {0} AND BD IS NOT NULL' -f $user.employeeID
                 $tempPwQueryResult = Invoke-SQLCommand -Server $SQLServer -Database $SQLDatabase -Credential $SQLCredential -Query $filledTempPwQuery
-                if (!$tempPwQueryResult) { 
+                if (!$tempPwQueryResult) {
                     Write-Verbose ('{0},No data returned' -f $user.samAccountName)
                     continue
                 }
