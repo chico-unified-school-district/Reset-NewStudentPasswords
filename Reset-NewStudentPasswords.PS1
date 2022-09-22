@@ -28,9 +28,8 @@ This was built for use with Jenkins
 [cmdletbinding()]
 param (
  [Parameter(Mandatory = $True)]
- [Alias('DC', 'Server')]
- [ValidateScript( { Test-Connection -ComputerName $_ -Quiet -Count 1 })]
- [string]$DomainController,
+ [Alias('DCs')]
+ [string[]]$DomainControllers,
  # PSSession to Domain Controller and Use Active Directory CMDLETS
  [Parameter(Mandatory = $True)]
  [Alias('ADCred')]
@@ -69,6 +68,10 @@ $adCmdLets = @(
 # Imported Functions
 . .\lib\Add-Log.ps1 # Formats strings for logging purposes
 . .\lib\Invoke-SqlCommand.ps1
+. .\lib\Clear-SessionData.ps1
+. .\lib\New-ADSession.ps1
+. .\lib\Select-DomainController.ps1
+. .\lib\Show-TestRun.ps1
 
 # External Apps
 $gam = '.\lib\gam-64\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
@@ -97,8 +100,7 @@ Add-Log script "Running until $endTime" $WhatIf
 if (!$WhatIf) { Add-Log script "Running every $($waitTime/60) minutes" }
 
 do {
- $adSession = New-PSSession -ComputerName $DomainController -Credential $ADCredential
- Import-PSSession -Session $adSession -Module ActiveDirectory -CommandName $adCmdLets -AllowClobber > $null
+ $dc = Select-DomainController
 
  Write-Verbose 'Getting qualifying AD Objects...'
  $userObjs = Get-ADUser @params | Where-Object {
@@ -157,7 +159,7 @@ do {
      }
      Remove-ADPrincipalGroupMembership @removeParams
      Write-Verbose ('{0} (GR:{1}) removed from {2}' -f $samid, $user.gecos, $targetGroup)
-     Start-Sleep 15 # Give AD Time to replicate
+     Start-Sleep 20 # Give AD Time to replicate
     }
 
     Set-ADAccountPassword -Identity $samid -NewPassword $securePw -Reset -Confirm:$False -WhatIf:$WhatIf
@@ -165,7 +167,7 @@ do {
     if ($user.gecos -ge 6) {
      Add-ADPrincipalGroupMembership -Identity $user.ObjectGUID -MemberOf $targetGroup -Confirm:$False -WhatIf:$WhatIf
      Write-Verbose ('{0} (GR:{1}) added to {2}' -f $sam, $user.gecos, $targetGroup)
-     Start-Sleep 5
+     Start-Sleep 20
      Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset = 0 } -Confirm:$false -WhatIf:$WhatIf
     }
 
