@@ -166,7 +166,7 @@ do {
      }
      Remove-ADGroupMember @removeParams
      Write-Host ('{0} (GR:{1}) removed from [{2}]' -f $samid, $user.gecos, $targetGroup)
-     if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
+     if (-not$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
     }
     $setPwParams = @{
      Identity    = $user.ObjectGUID
@@ -188,7 +188,7 @@ do {
      }
      Add-ADGroupMember @addParams
      Write-Host ('{0} (GR:{1}) added to [{2}]' -f $samid, $user.gecos, $targetGroup)
-     if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
+     if (-not$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
      Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset = 0 } -Confirm:$false -WhatIf:$WhatIf
     }
 
