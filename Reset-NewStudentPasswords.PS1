@@ -57,8 +57,8 @@ $adCmdLets = @(
  'Get-ADUser'
  'Set-ADUser'
  'Set-ADAccountPassword'
- 'Remove-ADPrincipalGroupMembership'
- 'Add-ADPrincipalGroupMembership'
+ 'Add-ADGroupMember'
+ 'Remove-ADGroupMember'
 )
 
 # Imported Functions
@@ -73,7 +73,7 @@ $adCmdLets = @(
 $gam = '.\lib\gam-64\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
 
 # Processing
-$params = @{
+$ADParams = @{
  Filter     = {
   (employeeID -like '*') -and
   (homepage -like '*@ChicoUSD.net') -and
@@ -104,7 +104,7 @@ do {
  New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
 
  Write-Verbose 'Getting qualifying AD Objects...'
- $userObjs = Get-ADUser @params | Where-Object {
+ $userObjs = Get-ADUser @ADParams | Where-Object {
   ($_.created -ge (Get-Date).AddDays(-200)) -and
   ($_.created.DateTime -eq $_.passwordlastset.DateTime) -and
   ($null -eq $_.LastLogonDate)
@@ -120,7 +120,7 @@ do {
   [string]$id = $user.employeeID
   if (!$id) { Add-Log error "$samid,ID not set" $WhatIf; continue }
 
-  Write-Debug "Process $samid`?"
+  Write-Debug ('{0},{1},Process' -f $samid, [int]$user.gecos)
   # Check GSuite account and unsuspend if needed
   ($gamStatusCheck = .$gam print users query "email:$gmail" fields suspended | ConvertFrom-Csv)*>$null
   if ($gamStatusCheck.suspended -eq $true) {
@@ -155,25 +155,39 @@ do {
     $tempPw = [string](Get-Date $tempPwQueryResult.BD -Format yyMMdd)
     $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
 
-    if ($user.gecos -ge 6) {
+    if ([int]$user.gecos -ge 6) {
      $targetGroup = $SecondaryGroup
      $removeParams = @{
-      Identity    = $user.ObjectGUID
-      MemberOf    = $targetGroup
+      Identity    = $targetGroup
+      Members     = $user.ObjectGUID
       ErrorAction = 'SilentlyContinue'
       Confirm     = $false
       WhatIf      = $WhatIf
      }
-     Remove-ADPrincipalGroupMembership @removeParams
-     Write-Verbose ('{0} (GR:{1}) removed from {2}' -f $samid, $user.gecos, $targetGroup)
+     Remove-ADGroupMember @removeParams
+     Write-Host ('{0} (GR:{1}) removed from [{2}]' -f $samid, $user.gecos, $targetGroup)
      if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
     }
+    $setPwParams = @{
+     Identity    = $user.ObjectGUID
+     NewPassword = $securePw
+     Reset       = $True
+     Confirm     = $False
+     WhatIf      = $WhatIf
+     ErrorAction = 'Stop'
+    }
+    Set-ADAccountPassword @setPwParams
 
-    Set-ADAccountPassword -Identity $samid -NewPassword $securePw -Reset -Confirm:$False -WhatIf:$WhatIf
-
-    if ($user.gecos -ge 6) {
-     Add-ADPrincipalGroupMembership -Identity $user.ObjectGUID -MemberOf $targetGroup -Confirm:$False -WhatIf:$WhatIf
-     Write-Verbose ('{0} (GR:{1}) added to {2}' -f $sam, $user.gecos, $targetGroup)
+    if ([int]$user.gecos -ge 6) {
+     $addParams = @{
+      Identity    = $targetGroup
+      Members     = $user.ObjectGUID
+      ErrorAction = 'SilentlyContinue'
+      Confirm     = $false
+      WhatIf      = $WhatIf
+     }
+     Add-ADGroupMember @addParams
+     Write-Host ('{0} (GR:{1}) added to [{2}]' -f $samid, $user.gecos, $targetGroup)
      if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
      Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset = 0 } -Confirm:$false -WhatIf:$WhatIf
     }
