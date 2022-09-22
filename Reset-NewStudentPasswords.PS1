@@ -47,11 +47,11 @@ param (
  [string]$TempPWQuery,
  [Parameter(Mandatory = $True)]
  [string]$SecondaryGroup,
+ [Alias('wi')]
  [switch]$WhatIf
 )
 
 Clear-Host; $error.clear()
-# Imported Sessions
 # AD Domain Controller Session
 $adCmdLets = @(
  'Get-ADUser'
@@ -60,15 +60,11 @@ $adCmdLets = @(
  'Remove-ADPrincipalGroupMembership'
  'Add-ADPrincipalGroupMembership'
 )
-# $adSession = New-PSSession -ComputerName $DomainController -Credential $ADCredential
-# Import-PSSession -Session $adSession -Module ActiveDirectory -CommandName $adCmdLets -AllowClobber > $null
-
-# Variables
 
 # Imported Functions
 . .\lib\Add-Log.ps1 # Formats strings for logging purposes
-. .\lib\Invoke-SqlCommand.ps1
 . .\lib\Clear-SessionData.ps1
+. .\lib\Load-Module.ps1
 . .\lib\New-ADSession.ps1
 . .\lib\Select-DomainController.ps1
 . .\lib\Show-TestRun.ps1
@@ -100,7 +96,12 @@ Add-Log script "Running until $endTime" $WhatIf
 if (!$WhatIf) { Add-Log script "Running every $($waitTime/60) minutes" }
 
 do {
- $dc = Select-DomainController
+ Show-TestRun
+ Clear-SessionData
+ 'SQLServer' | Load-Module
+
+ $dc = Select-DomainController $DomainControllers
+ New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
 
  Write-Verbose 'Getting qualifying AD Objects...'
  $userObjs = Get-ADUser @params | Where-Object {
@@ -139,8 +140,14 @@ do {
    # looking for 'passwordsLastSet date' = 'account create date'.
    if (($user.created.DateTime -eq $user.passwordlastset.DateTime)) {
     # Query SIS DB for data
-    $filledTempPwQuery = 'SELECT DISTINCT BD FROM STU WHERE ID = {0} AND BD IS NOT NULL' -f $user.employeeID
-    $tempPwQueryResult = Invoke-SQLCommand -Server $SQLServer -Database $SQLDatabase -Credential $SQLCredential -Query $filledTempPwQuery
+    $filledTempPwQuery = $TempPWQuery -f $user.employeeID
+    $sqlParams = @{
+     Server     = $SQLServer
+     Database   = $SQLDatabase
+     Credential = $SQLCredential
+     Query      = $filledTempPwQuery
+    }
+    $tempPwQueryResult = Invoke-SQLCmd @sqlParams
     if (!$tempPwQueryResult) {
      Write-Verbose ('{0},No data returned' -f $user.samAccountName)
      continue
@@ -159,7 +166,7 @@ do {
      }
      Remove-ADPrincipalGroupMembership @removeParams
      Write-Verbose ('{0} (GR:{1}) removed from {2}' -f $samid, $user.gecos, $targetGroup)
-     Start-Sleep 20 # Give AD Time to replicate
+     if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
     }
 
     Set-ADAccountPassword -Identity $samid -NewPassword $securePw -Reset -Confirm:$False -WhatIf:$WhatIf
@@ -167,7 +174,7 @@ do {
     if ($user.gecos -ge 6) {
      Add-ADPrincipalGroupMembership -Identity $user.ObjectGUID -MemberOf $targetGroup -Confirm:$False -WhatIf:$WhatIf
      Write-Verbose ('{0} (GR:{1}) added to {2}' -f $sam, $user.gecos, $targetGroup)
-     Start-Sleep 20
+     if (-not$WhatIf) { Start-Sleep 20 } # Give AD time to replicate
      Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset = 0 } -Confirm:$false -WhatIf:$WhatIf
     }
 
@@ -187,7 +194,8 @@ do {
   else { Write-Verbose "$samid not found in GSUite" } # End Check Gsuite and reset password
  }
 
- Get-PSSession | Remove-PSSession -WhatIf:$false
+ Clear-SessionData
+ Show-TestRun
 
  # End Process AD Results
  #  Wait x seconds and run again until $endTime
@@ -199,5 +207,3 @@ do {
   }
  }
 } until ((Get-Date) -ge $endTime )
-Add-Log action 'Tearing Down AD Sessions'
-Get-PSSession | Remove-PSSession -WhatIf:$false
