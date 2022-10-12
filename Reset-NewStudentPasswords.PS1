@@ -64,7 +64,7 @@ $adCmdLets = @(
 # Imported Functions
 . .\lib\Add-Log.ps1 # Formats strings for logging purposes
 . .\lib\Clear-SessionData.ps1
-. .\lib\Load-Module.ps1
+. .\lib\Add-Module.ps1
 . .\lib\New-ADSession.ps1
 . .\lib\Select-DomainController.ps1
 . .\lib\Show-TestRun.ps1
@@ -98,7 +98,7 @@ if (!$WhatIf) { Add-Log script "Running every $($waitTime/60) minutes" }
 do {
  Show-TestRun
  Clear-SessionData
- 'SQLServer' | Load-Module
+ 'SQLServer' | Add-Module
 
  $dc = Select-DomainController $DomainControllers
  New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
