@@ -47,6 +47,8 @@ param (
  [string]$TempPWQuery,
  [Parameter(Mandatory = $True)]
  [string]$SecondaryGroup,
+ # Delay between each iteration.
+ [int]$LoopDelaySeconds = 900,
  [Alias('wi')]
  [switch]$WhatIf
 )
@@ -91,7 +93,7 @@ $ADParams = @{
 
 if ( $WhatIf ) { $endTime = Get-Date } # DO Loop cut short on test run
 else { $endTime = (Get-Date '5:00 PM') } # DO Loop stops at this time
-if ($WhatIf) { $waitTime = 1 } else { $waitTime = 3600 } # Sleep fox x seconds between each loop.
+if ($WhatIf) { $waitTime = 1 } else { $waitTime = $LoopDelaySeconds } # Sleep fox x seconds between each loop.
 Add-Log script "Running until $endTime" $WhatIf
 if (!$WhatIf) { Add-Log script "Running every $($waitTime/60) minutes" }
 
