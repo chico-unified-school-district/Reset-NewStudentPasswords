@@ -216,7 +216,7 @@ do {
  # End Process AD Results
  #  Wait x seconds and run again until $endTime
  if ( !$WhatIf ) {
-  "Next run at $((Get-Date).AddSeconds($waitTime))"
+  # ("Next run at $((Get-Date).AddSeconds($waitTime))")
   foreach ($n in $waitTime..1) {
    Start-Sleep 1
    # Write-Progress -Activity "Processing User Objects" -Status Waiting -Sec $n
