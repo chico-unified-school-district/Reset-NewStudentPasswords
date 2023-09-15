@@ -134,7 +134,7 @@ do {
     (.$gam update user $gmail suspended off) *>$null
    }
   }
-  ($guser = . $gam info user $samid) *>$null
+  ($guser = & $gam print users query "email: $gmail") *>$null
   if ( [string]$guser -match $samid ) {
    # Begin check Gsuite and reset password
    Write-Verbose $user.samAccountName
@@ -202,7 +202,7 @@ do {
     .$gam update user suspended off *>$null
    }
    # Re-Check GSUite
-   ($guser = . $gam info user $samid) *>$null
+   ($guser = & $gam print users query "email: $gmail") *>$null
    if ([string]$guser -match 'Account Suspended: True') {
     Add-Log warning "$samid,User account is still suspended" $WhatIf
    }
