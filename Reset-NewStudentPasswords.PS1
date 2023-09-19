@@ -124,7 +124,7 @@ do {
 
   Write-Debug ('{0},{1},Process' -f $samid, [int]$user.gecos)
   # Check GSuite account and unsuspend if needed
-  ($gamStatusCheck = .$gam print users query "email:$gmail" fields suspended | ConvertFrom-Csv)*>$null
+  ($gamStatusCheck = & $gam print users query "email:$gmail" fields suspended | ConvertFrom-Csv)*>$null
   if ($gamStatusCheck.suspended -eq $true) {
    Add-Log gsuite ('{0},Activating Account' -f $gmail)
    if ($WhatIf) {
