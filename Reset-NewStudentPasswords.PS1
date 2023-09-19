@@ -37,7 +37,7 @@ param (
  [Parameter(Mandatory = $True)]
  [string]$ADSearchBase,
  [Parameter(Mandatory = $True)]
- [ValidateScript( { Test-Connection -ComputerName $_ -Quiet -Count 1 })]
+ # [ValidateScript( { Test-Connection -ComputerName $_ -Quiet -Count 1 })]
  [string]$SQLServer,
  [Parameter(Mandatory = $True)]
  [string]$SQLDatabase,
