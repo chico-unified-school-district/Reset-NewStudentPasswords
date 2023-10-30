@@ -72,7 +72,7 @@ $adCmdLets = @(
 . .\lib\Show-TestRun.ps1
 
 # External Apps
-$gam = '.\lib\gam-64\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
+$gam = '.\bin\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
 
 # Processing
 $ADParams = @{
