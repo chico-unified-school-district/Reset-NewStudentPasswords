@@ -144,10 +144,11 @@ do {
     # Query SIS DB for data
     $filledTempPwQuery = $TempPWQuery -f $user.employeeID
     $sqlParams = @{
-     Server     = $SQLServer
-     Database   = $SQLDatabase
-     Credential = $SQLCredential
-     Query      = $filledTempPwQuery
+     Server                 = $SQLServer
+     Database               = $SQLDatabase
+     Credential             = $SQLCredential
+     TrustServerCertificate = $true
+     Query                  = $filledTempPwQuery
     }
     $tempPwQueryResult = Invoke-SQLCmd @sqlParams
     if (!$tempPwQueryResult) {
