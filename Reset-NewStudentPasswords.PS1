@@ -30,9 +30,7 @@ param (
  [Parameter(Mandatory = $True)]
  [Alias('DCs')]
  [string[]]$DomainControllers,
- # PSSession to Domain Controller and Use Active Directory CMDLETS
  [Parameter(Mandatory = $True)]
- [Alias('ADCred')]
  [System.Management.Automation.PSCredential]$ADCredential,
  [Parameter(Mandatory = $True)]
  [string]$ADSearchBase,
@@ -47,180 +45,194 @@ param (
  [string]$TempPWQuery,
  [Parameter(Mandatory = $True)]
  [string]$SecondaryGroup,
+ [string]$StopTime = '6:00pm',
  # Delay between each iteration.
  [int]$LoopDelaySeconds = 900,
  [Alias('wi')]
  [switch]$WhatIf
 )
 
-Clear-Host; $error.clear()
-# AD Domain Controller Session
-$adCmdLets = @(
- 'Get-ADUser'
- 'Set-ADUser'
- 'Set-ADAccountPassword'
- 'Add-ADGroupMember'
- 'Remove-ADGroupMember'
-)
+function Add-ToGroup {
+ process {
+  if ($null -eq $_.group) { return $_ }
+  Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
+  $addParams = @{
+   Identity = $_.group
+   Members  = $_.guid
+   # ErrorAction = 'SilentlyContinue'
+   Confirm  = $false
+   WhatIf   = $WhatIf
+  }
+  Add-ADGroupMember @addParams
+  $_
+ }
+}
 
+function Complete-Processing {
+ process {
+  Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
+ }
+}
+
+function Format-Obj ($group) {
+ process {
+  Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
+  [PSCustomObject]@{
+   id        = $_.EmployeeID
+   gmail     = $_.HomePage
+   samid     = $_.SamAccountName
+   grade     = $_.Gecos
+   guid      = $_.ObjectGUID
+   tempPw    = $null
+   group     = if ([int]$_.Gecos -ge 6) { $group } else { $null }
+   suspended = $null
+  }
+ }
+}
+
+function Get-GSuiteData {
+ begin {
+  Write-Verbose ('{0},Getting recent student accounts' -f $MyInvocation.MyCommand.Name)
+  ( $gusers = gam print users query "orgUnitPath:/STUDENTS" fields suspended, creationTime ) *>$null
+  $gobjs = $gusers | ConvertFrom-Csv | Where-Object { (Get-Date $_.creationTime) -gt ((Get-Date).AddDays(-5)) }
+ }
+ process {
+  $msg = $MyInvocation.MyCommand.Name, $_.samid
+  Write-Verbose ('{0},{1}' -f $msg)
+  $gmail = $_.gmail
+  $guser = $gobjs.Where({ $_.primaryEmail -eq $gmail })
+  # Write-Verbose ($guser | Out-String)
+  if ($null -eq $guser) { return (Write-Verbose ("{0},{1},Gsuite account not found " -f $msg)) }
+  $_.suspended = $guser.suspended
+  $_
+ }
+}
+
+function Get-UserObjs ($base) {
+ begin {
+  $cutOff = (Get-Date).AddDays(-5)
+  $params = @{
+   Filter     = "
+   (Created -ge `'$cutOff`') -and
+   (employeeID -like '*') -and
+   (homepage -like '*@*') -and
+   (Enabled -eq 'True')"
+   Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet', 'LastLogonDate', 'Gecos'
+   SearchBase = $base
+  }
+ }
+ process {
+  $objs = Get-ADUser @params | Where-Object {
+(($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
+   ($null -eq $_.LastLogonDate)
+  }
+  Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count)
+  $objs | Sort-Object -Property Gecos
+ }
+}
+
+function Remove-FromGroup {
+ process {
+  if ($null -eq $_.group) { return $_ }
+  Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
+  $removeParams = @{
+   Identity = $_.group
+   Members  = $_.guid
+   # ErrorAction = 'SilentlyContinue'
+   Confirm  = $false
+   WhatIf   = $WhatIf
+  }
+  if (!$WhatIf) { Write-Debug 'Reset PW?' }
+  Remove-ADGroupMember @removeParams
+  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
+  $_
+ }
+}
+
+function Reset-Password {
+ process {
+  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
+  $setPwParams = @{
+   Identity    = $_.guid
+   NewPassword = $_.tempPw
+   Reset       = $True
+   Confirm     = $False
+   WhatIf      = $WhatIf
+   ErrorAction = 'Stop'
+  }
+  Set-ADAccountPassword @setPwParams
+  $_
+ }
+}
+
+function Set-GSuiteActive {
+ process {
+  if ($_.suspended -eq 'false') { return $_ }
+  $msg = $MyInvocation.MyCommand.Name, "& $gam update user $($_.gmail) suspended off"
+  Write-Host ('{0},{1}' -f $msg)
+  if (!$WhatIf) { & $gam update user $_.gamil suspended off *>$null }
+  $_
+ }
+}
+
+function Set-PwData ($params, $query) {
+ process {
+  $cleanId = Format-SqlVar $_.id
+  $sql = $query -f $cleanId
+  Write-Verbose ($sql | Out-string)
+  $data = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
+  $msg = $MyInvocation.MyCommand.Name, $_.samid
+  if ($null -eq $data.tempPw) {
+   return (Write-Verbose ('{0},{1},NO DATA' -f $msg) )
+  }
+  $tempPw = try {
+   [string](Get-Date $data.tempPw -Format yyMMdd)
+  }
+  catch { return (Write-Error ('{0},{1}' -f $msg)) }
+  $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
+  Write-verbose ('{0},{1}' -f $msg)
+  $_.tempPw = $securePw
+  $_
+ }
+}
+
+# ===================================== Main ====================================
 # Imported Functions
-. .\lib\Add-Log.ps1 # Formats strings for logging purposes
 . .\lib\Clear-SessionData.ps1
 . .\lib\Add-Module.ps1
+. .\lib\Format-SqlVar.ps1
 . .\lib\New-ADSession.ps1
 . .\lib\Select-DomainController.ps1
 . .\lib\Show-TestRun.ps1
 
-# External Apps
+Show-TestRun
+
 $gam = '.\bin\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
 
-# Processing
-$ADParams = @{
- Filter     = {
-  (employeeID -like '*') -and
-  (homepage -like '*@ChicoUSD.net') -and
-  (Enabled -eq $True)
- }
- Properties =
- 'employeeID',
- 'homepage',
- 'PasswordLastSet',
- 'LastLogonDate',
- 'gecos',
- 'Created'
- SearchBase = $ADSearchBase
+'SQLServer' | Add-Module
+$sqlParams = @{
+ Server                 = $SQLServer
+ Database               = $SQLDatabase
+ Credential             = $SQLCredential
+ TrustServerCertificate = $true
+ Debug                  = $false
 }
 
-if ( $WhatIf ) { $endTime = Get-Date } # DO Loop cut short on test run
-else { $endTime = (Get-Date '5:00 PM') } # DO Loop stops at this time
-if ($WhatIf) { $waitTime = 1 } else { $waitTime = $LoopDelaySeconds } # Sleep fox x seconds between each loop.
-Add-Log script "Running until $endTime" $WhatIf
-if (!$WhatIf) { Add-Log script "Running every $($waitTime/60) minutes" }
-
+'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 60), $StopTime
 do {
- Show-TestRun
  Clear-SessionData
- 'SQLServer' | Add-Module
-
  $dc = Select-DomainController $DomainControllers
- New-ADSession -dc $dc -cmdlets $adCmdLets -cred $ADCredential
-
- Write-Verbose 'Getting qualifying AD Objects...'
- $userObjs = Get-ADUser @ADParams | Where-Object {
-  ($_.created -ge (Get-Date).AddDays(-200)) -and
-  ($_.created.DateTime -eq $_.passwordlastset.DateTime) -and
-  ($null -eq $_.LastLogonDate)
- }
-
- foreach ( $user in $userObjs ) {
-  # Get student info
-  # Process AD Results
-  $samid = $user.samAccountName
-  $homepage = $user.homepage
-  $gmail = $user.homepage
-  if (!$homepage) { Add-Log error "$samid,Homepage not set,Skipping" $WhatIf; continue }
-  [string]$id = $user.employeeID
-  if (!$id) { Add-Log error "$samid,ID not set" $WhatIf; continue }
-
-  Write-Debug ('{0},{1},Process' -f $samid, [int]$user.gecos)
-  # Check GSuite account and unsuspend if needed
-  ($gamStatusCheck = & $gam print users query "email:$gmail" fields suspended | ConvertFrom-Csv)*>$null
-  if ($gamStatusCheck.suspended -eq $true) {
-   Add-Log gsuite ('{0},Activating Account' -f $gmail)
-   if ($WhatIf) {
-    "[WHATIF] $gam update user $gmail suspended off"
-   }
-   else {
-    (.$gam update user $gmail suspended off) *>$null
-   }
-  }
-  ($guser = & $gam print users query "email: $gmail") *>$null
-  if ( [string]$guser -match $samid ) {
-   # Begin check Gsuite and reset password
-   Write-Verbose $user.samAccountName
-   # Begin PW Reset Process.
-   # looking for 'passwordsLastSet date' = 'account create date'.
-   if (($user.created.DateTime -eq $user.passwordlastset.DateTime)) {
-    # Query SIS DB for data
-    $filledTempPwQuery = $TempPWQuery -f $user.employeeID
-    $sqlParams = @{
-     Server                 = $SQLServer
-     Database               = $SQLDatabase
-     Credential             = $SQLCredential
-     TrustServerCertificate = $true
-     Query                  = $filledTempPwQuery
-    }
-    $tempPwQueryResult = Invoke-SQLCmd @sqlParams
-    if (!$tempPwQueryResult) {
-     Write-Verbose ('{0},No data returned' -f $user.samAccountName)
-     continue
-    }
-    $tempPw = [string](Get-Date $tempPwQueryResult.BD -Format yyMMdd)
-    $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
-
-    if ([int]$user.gecos -ge 6) {
-     $targetGroup = $SecondaryGroup
-     $removeParams = @{
-      Identity    = $targetGroup
-      Members     = $user.ObjectGUID
-      ErrorAction = 'SilentlyContinue'
-      Confirm     = $false
-      WhatIf      = $WhatIf
-     }
-     Remove-ADGroupMember @removeParams
-     Write-Host ('{0} (GR:{1}) removed from [{2}]' -f $samid, $user.gecos, $targetGroup)
-     if (-not$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
-    }
-    $setPwParams = @{
-     Identity    = $user.ObjectGUID
-     NewPassword = $securePw
-     Reset       = $True
-     Confirm     = $False
-     WhatIf      = $WhatIf
-     ErrorAction = 'Stop'
-    }
-    Set-ADAccountPassword @setPwParams
-
-    if ([int]$user.gecos -ge 6) {
-     $addParams = @{
-      Identity    = $targetGroup
-      Members     = $user.ObjectGUID
-      ErrorAction = 'SilentlyContinue'
-      Confirm     = $false
-      WhatIf      = $WhatIf
-     }
-     Add-ADGroupMember @addParams
-     Write-Host ('{0} (GR:{1}) added to [{2}]' -f $samid, $user.gecos, $targetGroup)
-     if (-not$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
-     Set-ADUser -Identity $user.ObjectGuid -Replace @{pwdlastset = 0 } -Confirm:$false -WhatIf:$WhatIf
-    }
-
-    Add-Log pwreset "$samid" $WhatIf
-   } # End PW Reset Process
-   # Reactivate GSuite account
-   if ( [string]$guser -match 'Account Suspended: True' ) {
-    Add-Log update "$samid GSuite Account: Enabled" $WhatIf
-    .$gam update user suspended off *>$null
-   }
-   # Re-Check GSUite
-   ($guser = & $gam print users query "email: $gmail") *>$null
-   if ([string]$guser -match 'Account Suspended: True') {
-    Add-Log warning "$samid,User account is still suspended" $WhatIf
-   }
-  }
-  else { Write-Verbose "$samid not found in GSUite" } # End Check Gsuite and reset password
- }
-
- Clear-SessionData
- Show-TestRun
-
- # End Process AD Results
- #  Wait x seconds and run again until $endTime
- if ( !$WhatIf ) {
-  # ("Next run at $((Get-Date).AddSeconds($waitTime))")
-  foreach ($n in $waitTime..1) {
-   Start-Sleep 1
-   # Write-Progress -Activity "Processing User Objects" -Status Waiting -Sec $n
-  }
- }
-} until ((Get-Date) -ge $endTime )
+ $cmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
+ 'Add-ADGroupMember', 'Remove-ADGroupMember'
+ New-ADSession -dc $dc -cmdlets $cmdLets -cred $ADCredential
+ Get-UserObjs $ADSearchBase |
+ Format-Obj $SecondaryGroup |
+ Set-PwData $sqlParams $TempPWQuery |
+ Get-GSuiteData |
+ Remove-FromGroup |
+ Reset-Password |
+ Add-ToGroup |
+ Set-GSuiteActive |
+ Complete-Processing
+ if (!$WhatIf) { Start-Sleep $LoopDelaySeconds }
+} until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
