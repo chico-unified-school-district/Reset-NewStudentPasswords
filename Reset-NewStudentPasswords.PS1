@@ -93,7 +93,7 @@ function Format-Obj ($group) {
 function Get-GSuiteData {
  begin {
   Write-Verbose ('{0},Getting recent student accounts' -f $MyInvocation.MyCommand.Name)
-  ( $gusers = gam print users query "orgUnitPath:/STUDENTS" fields suspended, creationTime ) *>$null
+  ( $gusers = & $gam print users query "orgUnitPath:/STUDENTS" fields suspended, creationTime ) *>$null
   $gobjs = $gusers | ConvertFrom-Csv | Where-Object { (Get-Date $_.creationTime) -gt ((Get-Date).AddDays(-5)) }
  }
  process {
