@@ -122,10 +122,10 @@ function Get-UserObjs ($base) {
  }
  process {
   $objs = Get-ADUser @params | Where-Object {
-(($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
+   (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
    ($null -eq $_.LastLogonDate)
   }
-  if ($objs.count -gt 0) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count) }
+  if ($objs) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count) }
   $objs | Sort-Object -Property Gecos
  }
 }
