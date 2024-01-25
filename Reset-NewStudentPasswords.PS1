@@ -176,12 +176,12 @@ function Set-GSuiteActive {
 
 function Set-PwData ($params, $query) {
  process {
+  $msg = $MyInvocation.MyCommand.Name, $_.samid
   $cleanId = Format-SqlVar $_.id
   $sql = $query -f $cleanId
   Write-Verbose ($sql | Out-string)
   $data = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
   if ($null -eq $data) { return (Write-Host ('{0},{1},Sql Data not found.' -f $msg)) }
-  $msg = $MyInvocation.MyCommand.Name, $_.samid
   $tempPw = try { [string](Get-Date $data.tempPw -Format yyMMdd) }
   catch { return (Write-Host ('{0},{1},tempPW error' -f $msg)) }
   # if ($null -eq $data.tempPw) { return (Write-Host ('{0},{1},NO DATA' -f $msg) ) }
