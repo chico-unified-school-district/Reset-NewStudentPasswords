@@ -181,13 +181,8 @@ function Set-PwData ($params, $query) {
   Write-Verbose ($sql | Out-string)
   $data = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
   $msg = $MyInvocation.MyCommand.Name, $_.samid
-  if ($null -eq $data.tempPw) {
-   return (Write-Verbose ('{0},{1},NO DATA' -f $msg) )
-  }
-  $tempPw = try {
-   [string](Get-Date $data.tempPw -Format yyMMdd)
-  }
-  catch { return (Write-Error ('{0},{1}' -f $msg)) }
+  $tempPw = try { [string](Get-Date $data.tempPw -Format yyMMdd) } catch { return (Write-Error ('{0},{1}' -f $msg)) }
+  if ($null -eq $data.tempPw) { return (Write-Verbose ('{0},{1},NO DATA' -f $msg) ) }
   $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
   Write-verbose ('{0},{1}' -f $msg)
   $_.tempPw = $securePw
