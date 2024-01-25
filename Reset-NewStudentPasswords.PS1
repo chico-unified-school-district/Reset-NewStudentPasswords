@@ -112,11 +112,10 @@ function Get-UserObjs ($base) {
  begin {
   $cutOff = (Get-Date).AddDays(-5)
   $params = @{
-   Filter     = "
-   (Created -ge `'$cutOff`') -and
-   (employeeID -like '*') -and
-   (homepage -like '*@*') -and
-   (Enabled -eq 'True')"
+   Filter     = "(Created -ge `'$cutOff`') -and
+                 (employeeID -like '*') -and
+                 (homepage -like '*@*') -and
+                 (Enabled -eq 'True')"
    Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet', 'LastLogonDate', 'Gecos'
    SearchBase = $base
   }
@@ -126,7 +125,7 @@ function Get-UserObjs ($base) {
 (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
    ($null -eq $_.LastLogonDate)
   }
-  Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count)
+  if ($objs.count -gt 0) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count) }
   $objs | Sort-Object -Property Gecos
  }
 }
