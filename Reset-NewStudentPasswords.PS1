@@ -102,7 +102,7 @@ function Get-GSuiteData {
   $gmail = $_.gmail
   $guser = $gobjs.Where({ $_.primaryEmail -eq $gmail })
   # Write-Verbose ($guser | Out-String)
-  if ($null -eq $guser) { return (Write-Verbose ("{0},{1},Gsuite account not found " -f $msg)) }
+  if ($null -eq $guser) { return (Write-Host ("{0},{1},Gsuite not synced " -f $msg)) }
   $_.suspended = $guser.suspended
   $_
  }
@@ -126,7 +126,7 @@ function Get-UserObjs ($base) {
 (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
    ($null -eq $_.LastLogonDate)
   }
-  Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count)
+  Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count)
   $objs | Sort-Object -Property Gecos
  }
 }
