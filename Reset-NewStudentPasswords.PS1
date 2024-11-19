@@ -155,7 +155,7 @@ function Remove-FromGroup {
   }
   if (!$WhatIf) { Write-Debug 'Reset PW?' }
   Remove-ADGroupMember @removeParams
-  if (!$WhatIf) { Start-Sleep 30 } # Give AD time to replicate
+  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
   $_
  }
 }
