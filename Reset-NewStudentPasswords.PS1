@@ -68,6 +68,16 @@ function Add-ToGroup {
  }
 }
 
+function Skip-MissingGecos {
+ process {
+  if ($_.gecos) { return $_ }
+  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
+  # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
+  $tempGrade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
+  Set-ADUser -Identity $_.guid -gecos
+ }
+}
+
 function Complete-Processing {
  process {
   Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
@@ -81,7 +91,8 @@ function Format-Obj ($group) {
    id        = $_.EmployeeID
    gmail     = $_.HomePage
    samid     = $_.SamAccountName
-   grade     = $_.Gecos
+   dept      = $_.Department
+   grade     = $_.elementary
    guid      = $_.ObjectGUID
    tempPw    = $null
    group     = if ([int]$_.Gecos -ge 6) { $group } else { $null }
@@ -108,7 +119,6 @@ function Get-GSuiteData {
   $_
  }
 }
-
 function Get-UserObjs ($base) {
  begin {
   $cutOff = (Get-Date).AddDays(-5)
@@ -117,7 +127,8 @@ function Get-UserObjs ($base) {
                  (employeeID -like '*') -and
                  (homepage -like '*@*') -and
                  (Enabled -eq 'True')"
-   Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet', 'LastLogonDate', 'Gecos'
+   Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet',
+   'LastLogonDate', 'Gecos', 'Department'
    SearchBase = $base
   }
  }
@@ -144,7 +155,7 @@ function Remove-FromGroup {
   }
   if (!$WhatIf) { Write-Debug 'Reset PW?' }
   Remove-ADGroupMember @removeParams
-  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
+  if (!$WhatIf) { Start-Sleep 30 } # Give AD time to replicate
   $_
  }
 }
