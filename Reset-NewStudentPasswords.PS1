@@ -68,13 +68,32 @@ function Add-ToGroup {
  }
 }
 
-function Skip-MissingGecos {
+function Wait-GroupRemoval {
+ begin {
+  $maxWait = 120
+ }
  process {
-  if ($_.gecos) { return $_ }
-  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
+  if (!$_.group) { return $_ }
+  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid) -F Blue
+  do { Start-Sleep 3; $maxWait -= 3 }
+  until (
+   ((Get-ADUser -Identity $_.guid -Properties memberof | select-object memberof) -notcontains $_.group) -or
+   ($maxWait -le 0) -or
+   ($WhatIf)
+  )
+  $_
+ }
+}
+
+function Set-MissingGecos {
+ process {
+  if ($_.grade -is [int]) { return $_ }
   # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
   $tempGrade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
-  Set-ADUser -Identity $_.guid -gecos
+  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.samid, $tempGrade)
+  Set-ADUser -Identity $_.guid -Replace @{gecos = $tempGrade } -WhatIf:$WhatIf
+  $_.grade = $tempGrade
+  $_
  }
 }
 
@@ -92,7 +111,7 @@ function Format-Obj ($group) {
    gmail     = $_.HomePage
    samid     = $_.SamAccountName
    dept      = $_.Department
-   grade     = $_.elementary
+   grade     = $_.Gecos
    guid      = $_.ObjectGUID
    tempPw    = $null
    group     = if ([int]$_.Gecos -ge 6) { $group } else { $null }
@@ -144,7 +163,7 @@ function Get-UserObjs ($base) {
 
 function Remove-FromGroup {
  process {
-  if ($null -eq $_.group) { return $_ }
+  if ($_.group -isnot [string]) { return $_ }
   Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
   $removeParams = @{
    Identity = $_.group
@@ -229,18 +248,21 @@ $sqlParams = @{
  Debug                  = $false
 }
 
+$cmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
+'Add-ADGroupMember', 'Remove-ADGroupMember'
+
 if (!$WhatIf) { 'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 60), $StopTime }
 do {
  Clear-SessionData
  $dc = Select-DomainController $DomainControllers
- $cmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
- 'Add-ADGroupMember', 'Remove-ADGroupMember'
  New-ADSession -dc $dc -cmdlets $cmdLets -cred $ADCredential
  Get-UserObjs $ADSearchBase |
  Format-Obj $SecondaryGroup |
+ Set-MissingGecos |
  Set-PwData $sqlParams $TempPWQuery |
  Get-GSuiteData |
  Remove-FromGroup |
+ Wait-GroupRemoval |
  Reset-Password |
  Add-ToGroup |
  Set-GSuiteActive |
