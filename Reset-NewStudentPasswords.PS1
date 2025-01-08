@@ -53,7 +53,7 @@ param (
 
 function Add-ToGroup {
  process {
-  if ($null -eq $_.group) { return $_ }
+  if ($_.removeFromGroup -eq $false) { return $_ }
   Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
   $addParams = @{
    Identity = $_.group
@@ -72,7 +72,7 @@ function Wait-GroupRemoval {
   $maxWait = 120
  }
  process {
-  if (!$_.group) { return $_ }
+  if ($_.removeFromGroup -eq $false) { return $_ }
   Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid) -F Blue
   do { Start-Sleep 3; $maxWait -= 3 }
   until (
@@ -86,7 +86,7 @@ function Wait-GroupRemoval {
 
 function Set-MissingGecos {
  process {
-  if ($_.grade -is [int]) { return $_ }
+  if ($_.grade -match '\d') { return $_ } # make sure grade/gecos is integer
   # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
   $tempGrade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.samid, $tempGrade)
@@ -106,15 +106,16 @@ function Format-Obj ($group) {
  process {
   Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
   [PSCustomObject]@{
-   id        = $_.EmployeeID
-   gmail     = $_.HomePage
-   samid     = $_.SamAccountName
-   dept      = $_.Department
-   grade     = $_.Gecos
-   guid      = $_.ObjectGUID
-   tempPw    = $null
-   group     = if ([int]$_.Gecos -ge 6) { $group } else { $null }
-   suspended = $null
+   id              = $_.EmployeeID
+   gmail           = $_.HomePage
+   samid           = $_.SamAccountName
+   dept            = $_.Department
+   grade           = $_.Gecos
+   guid            = $_.ObjectGUID
+   tempPw          = $null
+   removeFromGroup = if ($_.memberof -match $SecondaryGroup) { $true } else { $false }
+   group           = $group
+   suspended       = $null
   }
  }
 }
@@ -146,7 +147,7 @@ function Get-UserObjs ($base) {
                  (homepage -like '*@*') -and
                  (Enabled -eq 'True')"
    Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet',
-   'LastLogonDate', 'Gecos', 'Department'
+   'LastLogonDate', 'Gecos', 'Department', 'memberof'
    SearchBase = $base
   }
  }
@@ -155,14 +156,14 @@ function Get-UserObjs ($base) {
    (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
    ($null -eq $_.LastLogonDate)
   }
-  if ($objs) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, $objs.count) }
+  if ($objs) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count) }
   $objs | Sort-Object -Property Gecos
  }
 }
 
 function Remove-FromGroup {
  process {
-  if ($_.group -isnot [string]) { return $_ }
+  if ($_.removeFromGroup -eq $false) { return $_ }
   Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
   $removeParams = @{
    Identity = $_.group
