@@ -51,139 +51,44 @@ param (
  [switch]$WhatIf
 )
 
-function Add-ToGroup {
- process {
-  if ($_.removeFromGroup -eq $false) { return $_ }
-  Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
-  $addParams = @{
-   Identity = $_.group
-   Members  = $_.guid
-   # ErrorAction = 'SilentlyContinue'
-   Confirm  = $false
-   WhatIf   = $WhatIf
-  }
-  Add-ADGroupMember @addParams
-  $_
- }
-}
-
-function Wait-GroupRemoval {
- begin {
-  $maxWait = 120
- }
- process {
-  if ($_.removeFromGroup -eq $false) { return $_ }
-  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid) -F Blue
-  do { Start-Sleep 3; $maxWait -= 3 }
-  until (
-   ((Get-ADUser -Identity $_.guid -Properties memberof | select-object memberof) -notcontains $_.group) -or
-   ($maxWait -le 0) -or
-   ($WhatIf)
-  )
-  $_
- }
-}
-
-function Set-MissingGecos {
- process {
-  if ($_.grade -match '\d') { return $_ } # make sure grade/gecos is integer
-  # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
-  $tempGrade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
-  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.samid, $tempGrade)
-  Set-ADUser -Identity $_.guid -Replace @{gecos = $tempGrade } -WhatIf:$WhatIf
-  $_.grade = $tempGrade
-  $_
- }
-}
-
 function Complete-Processing {
  process {
   Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
  }
 }
 
-function Format-Obj ($group) {
+function Format-Obj {
  process {
   Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
   [PSCustomObject]@{
-   id              = $_.EmployeeID
-   gmail           = $_.HomePage
-   samid           = $_.SamAccountName
-   dept            = $_.Department
-   grade           = $_.Gecos
-   guid            = $_.ObjectGUID
-   tempPw          = $null
-   removeFromGroup = if ($_.memberof -match $SecondaryGroup) { $true } else { $false }
-   group           = $group
-   suspended       = $null
+   ad     = $_
+   gsuite = $null
+   tempPw = $null
+   group  = $null
   }
  }
 }
 
-function Get-GSuiteData {
- begin {
-  Write-Verbose ('{0},Getting recent student accounts' -f $MyInvocation.MyCommand.Name)
-  ( $gusers = & $gam print users query "orgUnitPath:/STUDENTS" fields suspended, creationTime ) *>$null
-  $gobjs = $gusers | ConvertFrom-Csv | Where-Object { (Get-Date $_.creationTime) -gt ((Get-Date).AddDays(-5)) }
+function Get-ADData ($OrgUnit, $props) {
+ $cutOff = (Get-Date).AddDays(-5)
+ $params = @{
+  Filter     = "(Created -ge '$cutOff') -and (employeeID -like '*')"
+  Properties = $props
+  SearchBase = $OrgUnit
  }
- process {
-  $msg = $MyInvocation.MyCommand.Name, $_.samid
-  Write-Verbose ('{0},{1}' -f $msg)
-  $gmail = $_.gmail
-  if ($null -eq $gobjs) { return }
-  $guser = $gobjs | Where-Object { $_.primaryEmail -eq $gmail }
-  # Write-Verbose ($guser | Out-String)
-  if ($null -eq $guser) { return (Write-Host ("{0},{1},Gsuite not synced " -f $msg)) }
-  $_.suspended = $guser.suspended
-  $_
- }
-}
-function Get-UserObjs ($base) {
- begin {
-  $cutOff = (Get-Date).AddDays(-5)
-  $params = @{
-   Filter     = "(Created -ge `'$cutOff`') -and
-                 (employeeID -like '*') -and
-                 (homepage -like '*@*') -and
-                 (Enabled -eq 'True')"
-   Properties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet',
-   'LastLogonDate', 'Gecos', 'Department', 'memberof'
-   SearchBase = $base
-  }
- }
- process {
-  $objs = Get-ADUser @params | Where-Object {
+ $objs = Get-ADUser @params | Where-Object {
    (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
    ($null -eq $_.LastLogonDate)
-  }
-  if ($objs) { Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count) }
-  $objs | Sort-Object -Property Gecos
  }
-}
-
-function Remove-FromGroup {
- process {
-  if ($_.removeFromGroup -eq $false) { return $_ }
-  Write-Host ('{0},{1},{2},{3}' -f $MyInvocation.MyCommand.Name, $_.samid, $_.grade , $_.group)
-  $removeParams = @{
-   Identity = $_.group
-   Members  = $_.guid
-   # ErrorAction = 'SilentlyContinue'
-   Confirm  = $false
-   WhatIf   = $WhatIf
-  }
-  if (!$WhatIf) { Write-Debug 'Reset PW?' }
-  Remove-ADGroupMember @removeParams
-  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
-  $_
- }
+ Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count)
+ $objs | Sort-Object -Property Gecos
 }
 
 function Reset-Password {
  process {
-  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.samid)
+  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName) -F Blue
   $setPwParams = @{
-   Identity    = $_.guid
+   Identity    = $_.ad.ObjectGUID
    NewPassword = $_.tempPw
    Reset       = $True
    Confirm     = $False
@@ -195,77 +100,125 @@ function Reset-Password {
  }
 }
 
+function Set-Group ($group) {
+ process {
+  $_.group = if ($_.ad.memberof -match $group) { $group }
+  $_
+ }
+}
+
 function Set-GSuiteActive {
  process {
-  if ($_.suspended -eq 'false') { return $_ }
-  $msg = $MyInvocation.MyCommand.Name, "& $gam update user $($_.gmail) suspended off"
-  Write-Host ('{0},{1}' -f $msg)
+  if ($_.gsuite.suspended -eq 'False') { return $_ }
+  Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
   if (!$WhatIf) { & $gam update user $_.gamil suspended off *>$null }
+  $_
+ }
+}
+
+function Set-GsuiteData {
+ process {
+    ($_.gsuite = & $gam print users query "email:$($_.ad.HomePage)" allfields | ConvertFrom-Csv)*>$null
+  if (!$_.gsuite) { return } # Skip if gsuite data missing
+  $_
+ }
+}
+
+function Set-MissingGecos {
+ process {
+  if ($_.ad.gecos -match '\d') { return $_ } # make sure grade/gecos is an integer
+  # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
+  $_.ad.gecos = if ($_.Department -match 'Elementary') { 0 } else { 100 }
+  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.ad.gecos)
+  Set-ADUser -Identity $_.ad.ObjectGUID -Replace @{gecos = $_.ad.gecos } -WhatIf:$WhatIf
   $_
  }
 }
 
 function Set-PwData ($params, $query) {
  process {
-  $msg = $MyInvocation.MyCommand.Name, $_.samid
-  $cleanId = Format-SqlVar $_.id
-  $sql = $query -f $cleanId
-  Write-Verbose ($sql | Out-string)
-  $data = Invoke-SqlCmd @params -Query $sql | ConvertTo-Csv | ConvertFrom-Csv
-
-  if ($null -eq $data) { return (Write-Host ('{0},{1},Sql Data not found.' -f $msg)) }
-
-  $tempPw = try { [string](Get-Date $data.tempPw -Format yyMMdd) }
-  catch { return (Write-Host ('{0},{1},tempPW error' -f $msg)) }
-
-  # if ($null -eq $data.tempPw) { return (Write-Host ('{0},{1},NO DATA' -f $msg) ) }
-  $securePw = ConvertTo-SecureString -String $tempPw -AsPlainText -Force
-  Write-verbose ('{0},{1}' -f $msg)
+  $data = New-SqlOperation @params -Query $query -Parameters "id=$($_.ad.EmployeeID)" | ConvertTo-Csv | ConvertFrom-Csv
+  if (!$data -or ($data.tempPw -notmatch '\d{6}')) { return }
+  Write-verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
+  $securePw = ConvertTo-SecureString -String $data.tempPw -AsPlainText -Force
   $_.tempPw = $securePw
   $_
  }
 }
 
-# ===================================== Main ====================================
-# Imported Functions
-. .\lib\Clear-SessionData.ps1
-. .\lib\Add-Module.ps1
-. .\lib\Format-SqlVar.ps1
-. .\lib\New-ADSession.ps1
-. .\lib\Select-DomainController.ps1
-. .\lib\Show-TestRun.ps1
+function Update-GroupAdd {
+ process {
+  if (!$_.group) { return $_ }
+  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.group) -F DarkMagenta
+  Add-ADGroupMember  -Identity $_.group -Members $_.ad.ObjectGUID -Confirm:$false -WhatIf:$WhatIf
+  $_
+ }
+}
 
-Show-TestRun
+function Update-GroupRemove {
+ process {
+  if (!$_.group) { return $_ }
+  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName , $_.group) -F Magenta
+  Remove-ADGroupMember -Identity $_.group -Members $_.ad.ObjectGUID -Confirm:$false -WhatIf:$WhatIf
+  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
+  $_
+ }
+}
+
+function Wait-GroupRemoval {
+ begin { $maxWait = 120 }
+ process {
+  if (!$_.group) { return $_ }
+  Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
+  do { Start-Sleep 3; $maxWait -= 3 }
+  until (
+   ((Get-ADUser -Identity $_.ad.ObjectGUID -Properties memberof | select-object memberof) -notcontains $_.group) -or
+   ($maxWait -le 0) -or
+   ($WhatIf)
+  )
+  $_
+ }
+}
+
+# ========================================================================
+Import-Module -Name 'dbatools', 'CommonScriptFunctions'
+Show-BlockInfo Start
+if ($WhatIf) { Show-TestRun }
 
 $gam = '.\bin\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
 
-'SQLServer' | Add-Module
 $sqlParams = @{
- Server                 = $SQLServer
- Database               = $SQLDatabase
- Credential             = $SQLCredential
- TrustServerCertificate = $true
- Debug                  = $false
+ Server     = $SQLServer
+ Database   = $SQLDatabase
+ Credential = $SQLCredential
 }
 
-$cmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
+$adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
 'Add-ADGroupMember', 'Remove-ADGroupMember'
+$adProperties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet',
+'LastLogonDate', 'Gecos', 'Department', 'memberof'
 
 if (!$WhatIf) { 'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 60), $StopTime }
 do {
  Clear-SessionData
- $dc = Select-DomainController $DomainControllers
- New-ADSession -dc $dc -cmdlets $cmdLets -cred $ADCredential
- Get-UserObjs $ADSearchBase |
- Format-Obj $SecondaryGroup |
- Set-MissingGecos |
- Set-PwData $sqlParams $TempPWQuery |
- Get-GSuiteData |
- Remove-FromGroup |
- Wait-GroupRemoval |
- Reset-Password |
- Add-ToGroup |
- Set-GSuiteActive |
- Complete-Processing
+
+ Connect-ADSession -DomainControllers $DomainControllers -Credential $ADCredential -Cmdlets $adCmdLets
+
+ Get-ADData $ADSearchBase $adProperties |
+  Format-Obj |
+   Set-GSuiteData |
+    Set-Group $SecondaryGroup |
+     Set-MissingGecos |
+      Set-PwData $sqlParams $TempPWQuery |
+       Update-GroupRemove |
+        Wait-GroupRemoval |
+         Reset-Password |
+          Update-GroupAdd |
+           Set-GSuiteActive |
+            Complete-Processing
+
+ Clear-SessionData
  if (!$WhatIf) { Start-Sleep $LoopDelaySeconds }
 } until ($WhatIf -or ((Get-Date) -ge (Get-Date $StopTime)))
+if ($WhatIf) { Show-TestRun }
+Show-BlockInfo End

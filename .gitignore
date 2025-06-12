@@ -24,7 +24,7 @@ $RECYCLE.BIN/
 
 # Thumbnails
 ._*
-
+*oauth2.txt
 /notes.ps1
 /jenkins.ps1
 /lib/gam-64/oauth2.txt
