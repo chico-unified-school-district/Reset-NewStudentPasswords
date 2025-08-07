@@ -59,7 +59,6 @@ function Complete-Processing {
 
 function Format-Obj {
  process {
-  Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
   [PSCustomObject]@{
    ad     = $_
    gsuite = $null
@@ -81,7 +80,7 @@ function Get-ADData ($OrgUnit, $props) {
   (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
   ($null -eq $_.LastLogonDate)
  }
- Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count)
+ Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count) -F Green
  $objs
 }
 
@@ -130,7 +129,7 @@ function Set-MissingTempGrade {
  process {
   if ($_.ad.gecos -match '\d') { return $_ } # make sure grade/gecos is an integer
   # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
-  $_.grade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
+  $_.grade = if ($_.ad.Department -match 'Elementary') { 0 } else { 100 }
   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.grade) -F Magenta
   Set-ADUser -Identity $_.ad.ObjectGUID -Add @{gecos = $_.grade } -WhatIf:$WhatIf
   $_
@@ -162,7 +161,6 @@ function Update-GroupRemove {
   if (!$_.group) { return $_ }
   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName , $_.group) -F Magenta
   Remove-ADGroupMember -Identity $_.group -Members $_.ad.ObjectGUID -Confirm:$false -WhatIf:$WhatIf
-  if (!$WhatIf) { Start-Sleep 10 } # Give AD time to replicate
   $_
  }
 }
@@ -200,7 +198,7 @@ $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
 $adProperties = 'HomePage', 'EmployeeID', 'Created', 'PasswordLastSet',
 'LastLogonDate', 'Gecos', 'Department', 'memberof'
 
-if (!$WhatIf) { 'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 60), $StopTime }
+'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 60), $StopTime
 do {
  Clear-SessionData
 
