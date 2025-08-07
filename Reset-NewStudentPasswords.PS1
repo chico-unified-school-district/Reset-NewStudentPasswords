@@ -65,6 +65,7 @@ function Format-Obj {
    gsuite = $null
    tempPw = $null
    group  = $null
+   grade  = $null
   }
  }
 }
@@ -81,7 +82,7 @@ function Get-ADData ($OrgUnit, $props) {
   ($null -eq $_.LastLogonDate)
  }
  Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count)
- $objs | Sort-Object -Property Gecos
+ $objs
 }
 
 function Reset-Password {
@@ -118,6 +119,7 @@ function Set-GSuiteActive {
 
 function Set-GsuiteData {
  process {
+  Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.HomePage)
   ($_.gsuite = & $gam print users query "email:$($_.ad.HomePage)" allfields | ConvertFrom-Csv)*>$null
   if (!$_.gsuite) { return } # Skip if gsuite data missing
   $_
@@ -128,8 +130,8 @@ function Set-MissingTempGrade {
  process {
   if ($_.ad.gecos -match '\d') { return $_ } # make sure grade/gecos is an integer
   # set grade (gecos) to 0 for elementary and set it to 100 for non-elementary
-  $grade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
-  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.grade)
+  $_.grade = if ($_.Department -match 'Elementary') { 0 } else { 100 }
+  Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.grade) -F Magenta
   Set-ADUser -Identity $_.ad.ObjectGUID -Add @{gecos = $_.grade } -WhatIf:$WhatIf
   $_
  }
