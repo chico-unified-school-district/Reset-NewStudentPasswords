@@ -77,10 +77,10 @@ function Get-ADData ($OrgUnit, $props) {
   SearchBase = $OrgUnit
  }
  $objs = Get-ADUser @params | Where-Object {
-  (($_.created.DateTime -eq $_.passwordlastset.DateTime) -or ($null -eq $_.passwordlastset.DateTime)) -and
+  (($_.created.DateTime -eq $_.PasswordLastSet.DateTime) -or ($null -eq $_.PasswordLastSet.DateTime)) -and
   ($null -eq $_.LastLogonDate)
  }
- Write-Host ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count) -F Green
+ Write-Verbose ('{0},Count: {1}' -f $MyInvocation.MyCommand.Name, @($objs).count)
  $objs
 }
 
@@ -111,7 +111,11 @@ function Set-GSuiteActive {
  process {
   if ($_.gsuite.suspended -eq 'False') { return $_ }
   Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
-  if (!$WhatIf) { & $gam update user $_.gamil suspended off *>$null }
+  if (!$WhatIf) {
+   $ErrorActionPreference = 'Continue'
+   & $gam update user $_.gamil suspended off *>$null
+   $ErrorActionPreference = 'Stop'
+  }
   $_
  }
 }
@@ -119,7 +123,9 @@ function Set-GSuiteActive {
 function Set-GsuiteData {
  process {
   Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.HomePage)
+  $ErrorActionPreference = 'Continue'
   ($_.gsuite = & $gam print users query "email:$($_.ad.HomePage)" allfields | ConvertFrom-Csv)*>$null
+  $ErrorActionPreference = 'Stop'
   if (!$_.gsuite) { return } # Skip if gsuite data missing
   $_
  }
@@ -140,7 +146,7 @@ function Set-PwData ($params, $query) {
  process {
   $data = New-SqlOperation @params -Query $query -Parameters "id=$($_.ad.EmployeeID)" | ConvertTo-Csv | ConvertFrom-Csv
   if (!$data -or ($data.tempPw -notmatch '\d{6}')) { return }
-  Write-verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
+  Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
   $securePw = ConvertTo-SecureString -String $data.tempPw -AsPlainText -Force
   $_.tempPw = $securePw
   $_
@@ -151,7 +157,7 @@ function Update-GroupAdd {
  process {
   if (!$_.group) { return $_ }
   Write-Host ('{0},{1},{2}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName, $_.group) -F DarkMagenta
-  Add-ADGroupMember  -Identity $_.group -Members $_.ad.ObjectGUID -Confirm:$false -WhatIf:$WhatIf
+  Add-ADGroupMember -Identity $_.group -Members $_.ad.ObjectGUID -Confirm:$false -WhatIf:$WhatIf
   $_
  }
 }
@@ -172,7 +178,7 @@ function Wait-GroupRemoval {
   Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
   do { Start-Sleep 3; $maxWait -= 3 }
   until (
-   ((Get-ADUser -Identity $_.ad.ObjectGUID -Properties memberof | select-object memberof) -notcontains $_.group) -or
+   ((Get-ADUser -Identity $_.ad.ObjectGUID -Properties memberof | Select-Object memberof) -notcontains $_.group) -or
    ($maxWait -le 0) -or
    ($WhatIf)
   )
@@ -185,13 +191,9 @@ Import-Module -Name 'dbatools', 'CommonScriptFunctions'
 Show-BlockInfo Start
 if ($WhatIf) { Show-TestRun }
 
-$gam = '.\bin\gam.exe' # GSuite cmd line tool - oauth2.txt is copied before this script runs
+$gam = 'C:\GAM7\gam.exe'
 
-$sqlParams = @{
- Server     = $SQLServer
- Database   = $SQLDatabase
- Credential = $SQLCredential
-}
+$sqlInstance = Connect-DbaInstance -SqlInstance $SQLServer -Database $SQLDatabase -SqlCredential $SQLCredential
 
 $adCmdLets = 'Get-ADUser', 'Set-ADUser', 'Set-ADAccountPassword',
 'Add-ADGroupMember', 'Remove-ADGroupMember'
@@ -209,7 +211,7 @@ do {
    Set-GSuiteData |
     Set-Group $SecondaryGroup |
      Set-MissingTempGrade |
-      Set-PwData $sqlParams $TempPWQuery |
+      Set-PwData $sqlInstance $TempPWQuery |
        Update-GroupRemove |
         Wait-GroupRemoval |
          Reset-Password |
