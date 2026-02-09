@@ -120,7 +120,7 @@ function Set-GSuiteActive {
  }
 }
 
-function Set-GsuiteData {
+function Set-GSuiteData {
  process {
   Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.HomePage)
   $ErrorActionPreference = 'Continue'
