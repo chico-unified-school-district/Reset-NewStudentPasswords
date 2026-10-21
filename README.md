@@ -1,3 +1,4 @@
 # Reset-NewStudentPasswords
-Reset AD passwords for students in order to activate their GSuite account.
+
+Reset AD passwords for students in order to activate their Google account.
 Thanks, Jay Lee! https://github.com/jay0lee/GAM

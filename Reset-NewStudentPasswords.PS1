@@ -1,17 +1,17 @@
 <#
 .SYNOPSIS
-Resets Gsuite passwords for non-staff
+Resets Google passwords for non-staff
 .DESCRIPTION
 Using gam.exe, an encrypted oauth2.txt file, a Domain Controller,
 and an AD Account with propers access to the Domain,
-the script can update AD/GSuite passwords and GSuite attributes for
+the script can update AD/Google passwords and Google attributes for
 qualifying AD user objects.
 .EXAMPLE
-Reset-GSuitePasswords.ps1 -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup
+Reset-GooglePasswords.ps1 -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup
 .EXAMPLE
-Reset-GSuitePasswords.ps1 -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-WhatIf -Verbose -Debug
+Reset-GooglePasswords.ps1 -ADCred $adCredObject -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-WhatIf -Verbose -Debug
 .EXAMPLE
-Reset-GSuitePasswords.ps1 -OneLoop -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-ADCred $adCredObject
+Reset-GooglePasswords.ps1 -OneLoop -SQLServer someSQLserver -SQLdatabase someDatabase -$TempPWQuery someSQLquery -SecondaryGroup SomeADGroup-ADCred $adCredObject
 .INPUTS
 Gam.exe oauth2.txt
 ACtive Driectory Domain Controller name.
@@ -19,8 +19,8 @@ Active Directory account with access to the Domain Controller
 and proper OU access
 .OUTPUTS
 AD objects are updated
-AD/GSuite passwords are updated
-GSuite attributes are updated
+AD/Google passwords are updated
+Google attributes are updated
 Logging info is generated for each action
 .NOTES
 This was built for use with Jenkins
@@ -46,17 +46,11 @@ param (
  [switch]$WhatIf
 )
 
-function Complete-Processing {
- process {
-  Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
- }
-}
-
 function Format-Obj {
  process {
   [PSCustomObject]@{
    ad     = $_
-   gsuite = $null
+   Google = $null
    tempPw = $null
    group  = $null
    grade  = $null
@@ -104,26 +98,22 @@ function Set-Group ($group) {
  }
 }
 
-function Set-GSuiteActive {
+function Set-GoogleActive {
  process {
-  if ($_.gsuite.suspended -eq 'False') { return $_ }
+  if ($_.Google.suspended -eq 'False') { return $_ }
   Write-Host ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.SamAccountName)
   if (!$WhatIf) {
-   $ErrorActionPreference = 'Continue'
-   & $gam update user $_.gamil suspended off *>$null
-   $ErrorActionPreference = 'Stop'
+   & $gam redirect stderr null update user $($_.ad.HomePage) suspended off *>$null
   }
   $_
  }
 }
 
-function Set-GSuiteData {
+function Set-GoogleData {
  process {
   Write-Verbose ('{0},{1}' -f $MyInvocation.MyCommand.Name, $_.ad.HomePage)
-  $ErrorActionPreference = 'Continue'
-  ($_.gsuite = & $gam print users query "email:$($_.ad.HomePage)" allfields | ConvertFrom-Csv)*>$null
-  $ErrorActionPreference = 'Stop'
-  if (!$_.gsuite) { return } # Skip if gsuite data missing
+  ($_.Google = & $gam redirect stderr null print users query "email:$($_.ad.HomePage)" allfields | ConvertFrom-Csv)*>$null
+  if (!$_.Google) { return } # Skip if Google data missing
   $_
  }
 }
@@ -153,6 +143,12 @@ function Set-PwData ($params, $query) {
   $securePw = ConvertTo-SecureString -String $data.tempPw -AsPlainText -Force
   $_.tempPw = $securePw
   $_
+ }
+}
+
+function Show-Object {
+ process {
+  Write-Verbose ($MyInvocation.MyCommand.Name, $_ | Out-String)
  }
 }
 
@@ -211,7 +207,7 @@ if (!$WhatIf) { 'Runs every {0} minutes. Stops at {1}' -f ($LoopDelaySeconds / 6
 do {
  Get-ADData -props $adProperties -cred $ADCredential |
   Format-Obj |
-   Set-GSuiteData |
+   Set-GoogleData |
     Set-Group -group $SecondaryGroup |
      Set-MissingTempGrade -cred $ADCredential |
       Set-PwData $sqlInstance $TempPWQuery |
@@ -219,8 +215,8 @@ do {
         Wait-GroupRemoval -cred $ADCredential |
          Reset-Password -cred $ADCredential |
           Update-GroupAdd -cred $ADCredential |
-           Set-GSuiteActive |
-            Complete-Processing
+           Set-GoogleActive |
+            Show-Object
  if ($WhatIf) { break }
  Start-Sleep $LoopDelaySeconds
 } until ((Get-Date) -ge (Get-Date $StopTime))
