@@ -27,23 +27,16 @@ This was built for use with Jenkins
 #>
 [cmdletbinding()]
 param (
- [Parameter(Mandatory = $True)]
- [System.Management.Automation.PSCredential]$ADCredential,
- [Parameter(Mandatory = $True)]
- [string]$SQLServer,
- [Parameter(Mandatory = $True)]
- [string]$SQLDatabase,
- [Parameter(Mandatory = $True)]
- [System.Management.Automation.PSCredential]$SQLCredential,
- [Parameter(Mandatory = $True)]
- [string]$TempPWQuery,
- [Parameter(Mandatory = $True)]
- [string]$SecondaryGroup,
+ [Parameter(Mandatory = $True)][PSCredential]$ADCredential,
+ [Parameter(Mandatory = $True)][string]$SQLServer,
+ [Parameter(Mandatory = $True)][string]$SQLDatabase,
+ [Parameter(Mandatory = $True)][PSCredential]$SQLCredential,
+ [Parameter(Mandatory = $True)][string]$TempPWQuery,
+ [Parameter(Mandatory = $True)][string]$SecondaryGroup,
  [string]$StopTime = '6:00pm',
  # Delay between each iteration.
  [int]$LoopDelaySeconds = 900,
- [Alias('wi')]
- [switch]$WhatIf
+ [Alias('wi')] [switch]$WhatIf
 )
 
 function Format-Obj {
